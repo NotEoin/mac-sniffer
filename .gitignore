@@ -1,1 +1,7 @@
+__pycache__/
+*.py[cod]
+
+# conda / virtualenv prefixes
+.venv/
+venv/
 myenv/
