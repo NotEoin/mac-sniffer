@@ -262,10 +262,19 @@ def main(argv: list[str] | None = None) -> int:
                     f"macs-seen={stats.macs_in_window})"
                 )
                 label = "devices" if args.fingerprint else "unique MACs"
+                # Addresses heard at the same moment inside one cluster cannot
+                # be one handset, so this says the count is merging devices
+                # right now. Only shown when it disagrees with the count.
+                floor = ""
+                if stats.least_devices_in_window > stats.active_in_window:
+                    floor = (
+                        f"  at least {stats.least_devices_in_window}: "
+                        "addresses overlap inside a device"
+                    )
                 print(
                     f"[{ts}] {label} in vicinity (last {args.window}s): "
                     f"{stats.active_in_window}{extra}  "
-                    f"[unique-ever={stats.total_unique_ever}]",
+                    f"[unique-ever={stats.total_unique_ever}]{floor}",
                     flush=True,
                 )
                 next_report = now + args.interval

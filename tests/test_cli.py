@@ -295,3 +295,28 @@ def test_signal_handlers_are_restored_on_the_way_out(stub):
     stub(StubBackend(start_error="nope"))
     cli.main(PROBE_ARGS)
     assert (signal.getsignal(signal.SIGINT), signal.getsignal(signal.SIGTERM)) == before
+
+
+def test_overlapping_addresses_are_reported_alongside_the_count(stub, capsys):
+    events = [
+        ProbeEvent(mac=mac, fingerprint="1111")
+        for mac in ("aa:11:11:11:11:01", "ba:22:22:22:22:02", "ca:33:33:33:33:03")
+        for _ in range(2)          # a burst each, not a single straggler
+    ]
+    backend = stub(StubBackend(events=events))
+    threading.Timer(1.5, lambda: os.kill(os.getpid(), signal.SIGINT)).start()
+
+    assert cli.main(PROBE_ARGS) == 0
+    out = capsys.readouterr().out
+    # One cluster, but three addresses transmitting at once inside it.
+    assert "in vicinity (last 300s): 1" in out
+    assert "at least 3: addresses overlap inside a device" in out
+
+
+def test_nothing_extra_when_the_floor_agrees(stub, capsys):
+    events = [ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111")]
+    stub(StubBackend(events=events))
+    threading.Timer(1.5, lambda: os.kill(os.getpid(), signal.SIGINT)).start()
+
+    assert cli.main(PROBE_ARGS) == 0
+    assert "at least" not in capsys.readouterr().out

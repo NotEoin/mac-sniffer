@@ -39,6 +39,15 @@ class DeviceRecord:
     # address -> when it was last heard, so the count can be scoped to the
     # window. A cluster outlives the addresses it was built from.
     macs: dict[str, float] = field(default_factory=dict)
+    # address -> the sighting before that. Two sightings close together are
+    # what separates an address in use from a straggler left over from a
+    # rotation; see the floor in :meth:`DeviceTracker.stats`.
+    macs_prev: dict[str, float] = field(default_factory=dict)
+    # The most addresses of this cluster ever in use at once, and when that
+    # was. Sampling only at report time watches a fraction of the window and
+    # misses overlaps that happen between reports.
+    peak_overlap: int = 0
+    peak_at: float = 0.0
 
 
 @dataclass
@@ -49,6 +58,9 @@ class TrackerStats:
     randomized_in_window: int
     universal_in_window: int
     macs_in_window: int
+    # Floor on the device count: addresses heard at the same moment inside one
+    # cluster cannot be the same radio, which is one handset at a time.
+    least_devices_in_window: int
 
 
 class DeviceTracker:
@@ -59,6 +71,7 @@ class DeviceTracker:
         window_seconds: int = 300,
         include_randomized: bool = True,
         cluster_by_fingerprint: bool = True,
+        concurrency_seconds: float = 10.0,
         clock: Callable[[], float] = time.time,
     ):
         if window_seconds <= 0:
@@ -66,6 +79,10 @@ class DeviceTracker:
         self.window_seconds = window_seconds
         self.include_randomized = include_randomized
         self.cluster_by_fingerprint = cluster_by_fingerprint
+        # How close together two addresses must be heard before they count as
+        # overlapping. Kept short: a handset rotating its address hands over
+        # between bursts, so its addresses do not overlap for long.
+        self.concurrency_seconds = concurrency_seconds
         # Swappable so replays and tests can drive the window without sleeping.
         self.clock = clock
 
@@ -142,6 +159,11 @@ class DeviceTracker:
         survivor.last_seen = max(left.last_seen, right.last_seen)
         survivor.hits += absorbed.hits
         survivor.macs.update(absorbed.macs)
+        survivor.macs_prev.update(absorbed.macs_prev)
+        if absorbed.peak_overlap > survivor.peak_overlap:
+            survivor.peak_overlap, survivor.peak_at = (
+                absorbed.peak_overlap, absorbed.peak_at,
+            )
         survivor.randomized = survivor.randomized or absorbed.randomized
         if survivor.last_ssid is None:
             survivor.last_ssid = absorbed.last_ssid
@@ -190,7 +212,14 @@ class DeviceTracker:
             else:
                 rec.last_seen = now
             rec.hits += 1
+            if mac_norm in rec.macs:
+                rec.macs_prev[mac_norm] = rec.macs[mac_norm]
             rec.macs[mac_norm] = now
+            overlap_cutoff = now - self.concurrency_seconds
+            in_use = sum(1 for t in rec.macs_prev.values() if t >= overlap_cutoff)
+            if in_use > rec.peak_overlap or rec.peak_at < now - self.window_seconds:
+                rec.peak_overlap, rec.peak_at = in_use, now
+
             if ssid:
                 rec.last_ssid = ssid
             if rssi is not None:
@@ -209,6 +238,8 @@ class DeviceTracker:
         for rec in self._devices.values():
             if any(seen < cutoff for seen in rec.macs.values()):
                 rec.macs = {m: t for m, t in rec.macs.items() if t >= cutoff}
+                rec.macs_prev = {m: t for m, t in rec.macs_prev.items()
+                                 if m in rec.macs}
 
         # The merge bookkeeping is scoped to the live clusters for the same
         # reason: neither map should outgrow what is actually in the window.
@@ -246,6 +277,9 @@ class DeviceTracker:
                     last_rssi=r.last_rssi,
                     randomized=r.randomized,
                     macs=dict(r.macs),
+                    macs_prev=dict(r.macs_prev),
+                    peak_overlap=r.peak_overlap,
+                    peak_at=r.peak_at,
                 )
                 for r in self._devices.values()
             ]
@@ -256,6 +290,12 @@ class DeviceTracker:
             self._evict_locked(now)
             randomized = sum(1 for r in self._devices.values() if r.randomized)
             macs_in_window = sum(len(r.macs) for r in self._devices.values())
+            # An address counts towards the floor only if it was heard twice
+            # inside the overlap window. One frame is what a rotation leaves
+            # behind; a burst is a radio that is actually in use, and two
+            # radios in use at once are two devices. The peak is carried
+            # through the window, since the overlap rarely lands on a report.
+            least = sum(max(1, r.peak_overlap) for r in self._devices.values())
             return TrackerStats(
                 window_seconds=self.window_seconds,
                 total_unique_ever=len(self._total_unique_ever),
@@ -263,4 +303,5 @@ class DeviceTracker:
                 randomized_in_window=randomized,
                 universal_in_window=len(self._devices) - randomized,
                 macs_in_window=macs_in_window,
+                least_devices_in_window=least,
             )

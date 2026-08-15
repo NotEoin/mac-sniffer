@@ -303,3 +303,115 @@ def test_a_fingerprint_first_seen_during_a_join_is_remembered(clock):
     assert set(tracker.snapshot()[0].macs) == {
         "aa:11:11:11:11:01", "ba:22:22:22:22:02",
     }
+
+
+# ---- the collision floor -------------------------------------------------
+
+
+def test_overlapping_addresses_raise_the_floor(clock):
+    """Two identical handsets fingerprint the same and merge into one cluster.
+
+    Two addresses transmitting in the same moment cannot be one radio: a
+    radio uses one address at a time.
+    """
+    tracker = make_tracker(clock)
+    # Each address heard twice: a burst, not a straggler from a rotation.
+    for _ in range(2):
+        tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+        tracker.observe("ba:22:22:22:22:02", fingerprint=FP_PIXEL)
+        tracker.observe("ca:33:33:33:33:03", fingerprint=FP_PIXEL)
+
+    stats = tracker.stats()
+    assert stats.active_in_window == 1        # one cluster, as before
+    assert stats.least_devices_in_window == 3  # but three at once
+
+
+def test_a_single_straggling_frame_does_not_raise_the_floor(clock):
+    """A rotating phone can leave one frame behind on its old address.
+
+    Measured on live captures: requiring a second sighting drops about 60%
+    of apparent overlaps, and those are the ones RSSI could not corroborate.
+    """
+    tracker = make_tracker(clock)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_PIXEL)   # one frame only
+
+    stats = tracker.stats()
+    assert stats.active_in_window == 1
+    assert stats.least_devices_in_window == 1
+
+
+def test_a_rotating_phone_does_not_raise_the_floor(clock):
+    tracker = make_tracker(clock, concurrency_seconds=10)
+    for mac in ("aa:11:11:11:11:01", "ba:22:22:22:22:02", "ca:33:33:33:33:03"):
+        tracker.observe(mac, fingerprint=FP_PIXEL)
+        tracker.observe(mac, fingerprint=FP_PIXEL)   # a burst on each
+        clock.advance(60)                            # then hands over
+
+    stats = tracker.stats()
+    assert stats.active_in_window == 1
+    assert stats.least_devices_in_window == 1   # handover, not overlap
+
+
+def test_the_floor_never_undercuts_the_count(clock):
+    tracker = make_tracker(clock, window_seconds=300, concurrency_seconds=10)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+    tracker.observe(UNIVERSAL_A)
+
+    clock.advance(60)   # both quiet, nothing overlapping right now
+    stats = tracker.stats()
+    assert stats.active_in_window == 2
+    assert stats.least_devices_in_window == 2
+
+
+def test_the_floor_sums_across_clusters(clock):
+    tracker = make_tracker(clock)
+    for _ in range(2):
+        for mac in ("aa:11:11:11:11:01", "ba:22:22:22:22:02"):
+            tracker.observe(mac, fingerprint=FP_PIXEL)
+        for mac in ("ca:33:33:33:33:03", "da:44:44:44:44:04", "ea:55:55:55:55:05"):
+            tracker.observe(mac, fingerprint=FP_IPHONE)
+
+    stats = tracker.stats()
+    assert stats.active_in_window == 2
+    assert stats.least_devices_in_window == 5
+
+
+def test_the_floor_remembers_an_overlap_that_has_passed(clock):
+    """Overlap rarely lands on a report.
+
+    With a 30s report interval and a 10s overlap window, sampling only at
+    report time watches a third of the run.
+    """
+    tracker = make_tracker(clock, window_seconds=300, concurrency_seconds=10)
+    for _ in range(2):
+        tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+        tracker.observe("ba:22:22:22:22:02", fingerprint=FP_PIXEL)
+
+    assert tracker.stats().least_devices_in_window == 2
+
+    # Both go quiet, then one of them alone keeps the cluster alive.
+    clock.advance(60)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+
+    stats = tracker.stats()
+    assert stats.active_in_window == 1
+    assert stats.least_devices_in_window == 2   # the overlap still happened
+
+
+def test_the_peak_expires_with_the_window(clock):
+    tracker = make_tracker(clock, window_seconds=100, concurrency_seconds=10)
+    for _ in range(2):
+        tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+        tracker.observe("ba:22:22:22:22:02", fingerprint=FP_PIXEL)
+    assert tracker.stats().least_devices_in_window == 2
+
+    # Long after the overlap, one address alone keeps the cluster alive.
+    clock.advance(150)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+
+    stats = tracker.stats()
+    assert stats.active_in_window == 1
+    assert stats.least_devices_in_window == 1   # that evidence has aged out
