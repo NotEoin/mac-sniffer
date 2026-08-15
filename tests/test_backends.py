@@ -250,7 +250,29 @@ def test_pyshark_reads_rssi_and_tolerates_junk():
     assert PysharkBackend._extract_rssi(StubPacket()) is None
 
 
-def test_pyshark_fingerprints_the_raw_frame():
+def test_pyshark_reads_rssi_reported_once_per_antenna():
+    """Measured live: this field arrives as ['-53', '-53'], not a scalar."""
+    pkt = StubPacket(radiotap=StubLayer(dbm_antsignal=["-53", "-53"]))
+    assert PysharkBackend._extract_rssi(pkt) == -53
+
+
+def test_pyshark_falls_back_to_the_radio_layer_for_rssi():
+    pkt = StubPacket(radiotap=StubLayer(dbm_antsignal="n/a"),
+                     wlan_radio=StubLayer(signal_dbm="-61"))
+    assert PysharkBackend._extract_rssi(pkt) == -61
+
+
+def test_pyshark_reads_the_ssid_out_of_the_frame():
+    """tshark does not expose wlan.ssid under use_json, but tag 0 is right there."""
+    assert PysharkBackend._ssid_from_ies([(0, b"HomeNet"), (1, b"\x02")]) == "HomeNet"
+    assert PysharkBackend._ssid_from_ies([(0, b""), (1, b"\x02")]) is None
+    assert PysharkBackend._ssid_from_ies([(1, b"\x02")]) is None
+
+
+def test_both_backends_agree_on_the_same_frame():
+    """The raw frame is the shared source of truth for both backends."""
+    from probe_sniffer.utils import compute_ie_fingerprint, parse_ies
+
     packet = build_probe("aa:bb:cc:dd:ee:ff")
     raw = bytes(packet)
 
@@ -261,12 +283,14 @@ def test_pyshark_fingerprints_the_raw_frame():
     events: list[ProbeEvent] = []
     ScapyBackend(iface="wlan0mon", on_event=events.append).handle_packet(packet)
 
-    assert PysharkBackend._extract_fingerprint(RawPacket()) == events[0].fingerprint
+    ies = parse_ies(PysharkBackend._raw_frame(RawPacket()))
+    assert compute_ie_fingerprint(ies) == events[0].fingerprint
+    assert PysharkBackend._ssid_from_ies(ies) == events[0].ssid
 
 
-def test_pyshark_fingerprint_is_none_without_raw_frames():
+def test_pyshark_has_no_raw_frame_without_include_raw():
     class NoRawPacket:
         def get_raw_packet(self):
             raise AttributeError("include_raw was not set")
 
-    assert PysharkBackend._extract_fingerprint(NoRawPacket()) is None
+    assert PysharkBackend._raw_frame(NoRawPacket()) is None

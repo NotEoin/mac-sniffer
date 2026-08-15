@@ -49,14 +49,20 @@ class PysharkBackend(SnifferBackend):
                 if not mac:
                     continue
 
+                # Parse the frame once and read the SSID, the fingerprint and
+                # the channel out of it. tshark's own field names for these
+                # move around between versions and layouts; the bytes do not.
+                raw = self._raw_frame(pkt)
+                ies = parse_ies(raw) if raw else []
+
                 self.on_event(
                     ProbeEvent(
                         mac=mac,
-                        ssid=self._extract_ssid(pkt),
+                        ssid=self._ssid_from_ies(ies) or self._extract_ssid(pkt),
                         rssi=self._extract_rssi(pkt),
                         ts=time.time(),
-                        fingerprint=self._extract_fingerprint(pkt),
-                        freq=self._extract_freq(pkt),
+                        fingerprint=compute_ie_fingerprint(ies) if ies else None,
+                        freq=parse_channel_mhz(raw) if raw else None,
                     )
                 )
         finally:
@@ -98,26 +104,32 @@ class PysharkBackend(SnifferBackend):
 
     @staticmethod
     def _extract_rssi(pkt) -> int | None:
+        # A frame heard on several antennas reports the strength once per
+        # antenna, so this field arrives as a list as often as not.
+        for layer, field in (("radiotap", "dbm_antsignal"),
+                             ("wlan_radio", "signal_dbm")):
+            value = getattr(getattr(pkt, layer, None), field, None)
+            if isinstance(value, (list, tuple)):
+                value = value[0] if value else None
+            if value is None:
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    @staticmethod
+    def _raw_frame(pkt) -> bytes | None:
+        """The frame as captured. Needs include_raw and use_json."""
         try:
-            return int(pkt.radiotap.dbm_antsignal)
-        except (AttributeError, TypeError, ValueError):
+            return pkt.get_raw_packet() or None
+        except Exception:
             return None
 
     @staticmethod
-    def _extract_freq(pkt) -> int | None:
-        try:
-            raw = pkt.get_raw_packet()
-        except Exception:
-            return None
-        return parse_channel_mhz(raw) if raw else None
-
-    @staticmethod
-    def _extract_fingerprint(pkt) -> str | None:
-        # Requires include_raw=True + use_json=True at capture time.
-        try:
-            raw = pkt.get_raw_packet()
-        except Exception:
-            return None
-        if not raw:
-            return None
-        return compute_ie_fingerprint(parse_ies(raw))
+    def _ssid_from_ies(ies) -> str | None:
+        for tag_id, body in ies:
+            if tag_id == 0:
+                return body.decode("utf-8", errors="replace") or None
+        return None
