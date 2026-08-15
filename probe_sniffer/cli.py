@@ -77,6 +77,14 @@ def _build_backend(name: str, iface: str, on_event) -> SnifferBackend:
     raise ValueError(f"unknown backend: {name}")
 
 
+def _band_of(freq_mhz: int) -> str:
+    if freq_mhz < 3000:
+        return "2.4 GHz"
+    if freq_mhz < 5925:
+        return "5 GHz"
+    return "6 GHz"
+
+
 def _warn_if_not_root(backend: str) -> None:
     if not hasattr(os, "geteuid") or os.geteuid() == 0:
         return
@@ -108,7 +116,66 @@ def main(argv: list[str] | None = None) -> int:
         cluster_by_fingerprint=args.fingerprint,
     )
 
+    # A radio that changes channel mid-capture quietly wrecks the count: a
+    # handset sends different information elements on 2.4 GHz than on 5 GHz,
+    # so crossing bands gives it a second fingerprint and counts it twice.
+    # This happens without asking when the monitor interface shares a wiphy
+    # with a managed one that is scanning.
+    # Within-band hops only cost coverage, so they share a small budget. A
+    # band crossing is always reported: that is the one that splits a device
+    # in two.
+    channel_state: dict[str, object] = {
+        "freq": None,
+        "hop_warnings": 0,
+        "crossings": 0,
+    }
+    channels_seen: set[int] = set()
+    max_hop_warnings = 3
+
+    def note_channel(freq: int | None) -> None:
+        if freq is None or freq == channel_state["freq"]:
+            return
+        channels_seen.add(freq)
+        previous = channel_state["freq"]
+        channel_state["freq"] = freq
+        if previous is None:
+            return
+
+        pin = f"pin it with: sudo iw dev {args.iface} set freq {previous}"
+        if _band_of(previous) != _band_of(freq):
+            # Said once in full, then counted. A radio sharing a wiphy with a
+            # scanning interface crosses bands dozens of times in a quarter of
+            # an hour, and repeating this each time buries the reports.
+            channel_state["crossings"] += 1
+            if channel_state["crossings"] == 1:
+                print(
+                    f"warning: capture crossed bands, {previous} MHz "
+                    f"({_band_of(previous)}) to {freq} MHz ({_band_of(freq)}). "
+                    "A device probes with different elements on each band, so "
+                    f"anything dual-band is counted twice from here on. {pin}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            return
+
+        if channel_state["hop_warnings"] >= max_hop_warnings:
+            return
+        channel_state["hop_warnings"] += 1
+        print(
+            f"warning: capture moved from {previous} MHz to {freq} MHz. "
+            f"Devices on {previous} MHz stop being heard. {pin}",
+            file=sys.stderr,
+            flush=True,
+        )
+        if channel_state["hop_warnings"] == max_hop_warnings:
+            print(
+                "warning: further hops within the band will not be reported.",
+                file=sys.stderr,
+                flush=True,
+            )
+
     def on_event(ev: ProbeEvent) -> None:
+        note_channel(ev.freq)
         tracker.observe(
             ev.mac,
             ssid=ev.ssid,
@@ -204,7 +271,21 @@ def main(argv: list[str] | None = None) -> int:
                 next_report = now + args.interval
             time.sleep(0.25)
     finally:
-        print("\nshutting down...", file=sys.stderr)
+        # Flushed: this is the last thing said about a run, and a capture that
+        # is killed rather than stopped would otherwise lose it in the buffer.
+        print("\nshutting down...", file=sys.stderr, flush=True)
+        if len(channels_seen) > 1:
+            bands = sorted({_band_of(f) for f in channels_seen})
+            crossings = channel_state["crossings"]
+            print(
+                f"note: this count covers {len(channels_seen)} channels "
+                f"({', '.join(str(f) for f in sorted(channels_seen))} MHz) "
+                f"across {len(bands)} band(s): {', '.join(bands)}"
+                + (f", crossing between them {crossings} times" if crossings else "")
+                + ". One channel at a time gives a count you can trust.",
+                file=sys.stderr,
+                flush=True,
+            )
         backend.stop()
         _restore_handlers()
 

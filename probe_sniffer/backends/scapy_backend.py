@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from ..utils import compute_ie_fingerprint, parse_ies
+from ..utils import compute_ie_fingerprint, parse_channel_mhz, parse_ies
 from .base import ProbeEvent, SnifferBackend
 
 
@@ -69,5 +69,6 @@ class ScapyBackend(SnifferBackend):
                 rssi=rssi,
                 ts=time.time(),
                 fingerprint=fingerprint,
+                freq=parse_channel_mhz(raw),
             )
         )

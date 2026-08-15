@@ -9,6 +9,7 @@ from probe_sniffer.utils import (
     is_multicast,
     is_valid_unicast,
     normalize_mac,
+    parse_channel_mhz,
     parse_ies,
 )
 
@@ -223,3 +224,29 @@ def test_fingerprint_separates_tag_boundaries():
     a = [(221, b"\x00\x10\x18"), (1, b"\x02")]
     b = [(221, b"\x00\x10"), (1, b"\x18\x02")]
     assert compute_ie_fingerprint(a) != compute_ie_fingerprint(b)
+
+
+# ---- capture channel ------------------------------------------------------
+
+
+CHANNEL_ONLY = 0b1000                 # Channel present
+TSFT_FLAGS_RATE_CHANNEL = 0b1111      # everything in front of it too
+
+
+def test_reads_the_capture_frequency():
+    fields = (2412).to_bytes(2, "little") + b"\x00\x00"
+    assert parse_channel_mhz(radiotap(CHANNEL_ONLY, fields)) == 2412
+
+
+def test_reads_the_frequency_behind_the_earlier_fields():
+    # TSFT (8, aligned to 8), Flags (1), Rate (1), then Channel aligned to 2.
+    fields = b"\x00" * 8 + b"\x10" + b"\x02" + (5745).to_bytes(2, "little") + b"\x00\x00"
+    frame = radiotap(TSFT_FLAGS_RATE_CHANNEL, fields)
+    assert parse_channel_mhz(frame) == 5745
+    assert has_trailing_fcs(frame)    # the Flags walk still lands correctly
+
+
+def test_no_channel_field_means_no_frequency():
+    assert parse_channel_mhz(radiotap(FLAGS_ONLY, b"\x10")) is None
+    assert parse_channel_mhz(b"") is None
+    assert parse_channel_mhz(radiotap(CHANNEL_ONLY, b"\x00\x00\x00\x00")) is None

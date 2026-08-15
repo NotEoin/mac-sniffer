@@ -55,11 +55,48 @@ def is_valid_unicast(mac: str) -> bool:
     return not is_multicast(mac)
 
 
-# Radiotap presence bits and the one Flags bit we care about.
+# Radiotap presence bits, and the leading fields as (bit, size, alignment).
+# Only the fields up to Channel are needed, and each one has to be stepped
+# over in order because they are packed at their natural alignment.
 _RADIOTAP_TSFT = 1 << 0
 _RADIOTAP_FLAGS = 1 << 1
+_RADIOTAP_CHANNEL = 1 << 3
 _RADIOTAP_EXT = 1 << 31
 _RADIOTAP_FLAG_FCS = 0x10
+
+_RADIOTAP_LEADING_FIELDS = (
+    (_RADIOTAP_TSFT, 8, 8),
+    (_RADIOTAP_FLAGS, 1, 1),
+    (1 << 2, 1, 1),            # Rate
+    (_RADIOTAP_CHANNEL, 4, 2),  # u16 frequency, then u16 channel flags
+)
+
+
+def _radiotap_field_offsets(raw_frame: bytes) -> dict[int, int]:
+    """Map presence bit -> offset for the leading radiotap fields."""
+    if len(raw_frame) < 8 or raw_frame[0] != 0:
+        return {}
+    present = int.from_bytes(raw_frame[4:8], "little")
+
+    # Chained presence bitmaps sit between the header and the field data.
+    offset = 8
+    chained = present
+    while chained & _RADIOTAP_EXT:
+        if offset + 4 > len(raw_frame):
+            return {}
+        chained = int.from_bytes(raw_frame[offset:offset + 4], "little")
+        offset += 4
+
+    offsets: dict[int, int] = {}
+    for bit, size, alignment in _RADIOTAP_LEADING_FIELDS:
+        if not present & bit:
+            continue
+        offset += -offset % alignment
+        if offset + size > len(raw_frame):
+            break
+        offsets[bit] = offset
+        offset += size
+    return offsets
 
 
 def has_trailing_fcs(raw_frame: bytes) -> bool:
@@ -68,31 +105,25 @@ def has_trailing_fcs(raw_frame: bytes) -> bool:
     Some drivers hand the checksum up with the frame and some strip it. Left
     in place it parses as one more Information Element about 1% of the time,
     which is enough to give a device a fresh fingerprint on every probe.
-
-    Only the first two presence bits matter: TSFT (8 bytes, 8-byte aligned)
-    is the sole field that can sit in front of Flags.
     """
-    if len(raw_frame) < 8:
-        return False
-    present = int.from_bytes(raw_frame[4:8], "little")
-    if not present & _RADIOTAP_FLAGS:
-        return False
-
-    # Chained presence bitmaps sit between the header and the field data.
-    offset = 8
-    chained = present
-    while chained & _RADIOTAP_EXT:
-        if offset + 4 > len(raw_frame):
-            return False
-        chained = int.from_bytes(raw_frame[offset:offset + 4], "little")
-        offset += 4
-
-    if present & _RADIOTAP_TSFT:
-        offset += -offset % 8
-        offset += 8
-    if offset >= len(raw_frame):
+    offset = _radiotap_field_offsets(raw_frame).get(_RADIOTAP_FLAGS)
+    if offset is None:
         return False
     return bool(raw_frame[offset] & _RADIOTAP_FLAG_FCS)
+
+
+def parse_channel_mhz(raw_frame: bytes) -> int | None:
+    """The frequency the frame was captured on, in MHz, if radiotap says.
+
+    Worth knowing because a radio that changes band mid-capture counts every
+    dual-band device twice: the same handset emits a different set of
+    information elements on 2.4 GHz than it does on 5 GHz, so its fingerprint
+    changes with the band.
+    """
+    offset = _radiotap_field_offsets(raw_frame).get(_RADIOTAP_CHANNEL)
+    if offset is None:
+        return None
+    return int.from_bytes(raw_frame[offset:offset + 2], "little") or None
 
 
 # IE IDs that vary per-frame from the same device and would destabilize the

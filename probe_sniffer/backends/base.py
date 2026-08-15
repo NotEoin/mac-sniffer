@@ -19,6 +19,8 @@ class ProbeEvent:
     # IE fingerprint: stable across MAC rotations of the same radio. ``None``
     # when the backend couldn't extract one or the IE set was too sparse.
     fingerprint: str | None = None
+    # Capture frequency in MHz, when radiotap reported one.
+    freq: int | None = None
 
 
 class SnifferBackend(ABC):

@@ -159,6 +159,104 @@ def test_ctrl_c_shuts_down_cleanly_after_reporting(stub, capsys):
     assert "(universal=1, randomized=1, macs-seen=3)" in out
 
 
+def test_a_band_crossing_is_reported(stub, capsys):
+    events = [
+        ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=2412),
+        ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=2412),
+        ProbeEvent(mac="ba:22:22:22:22:02", fingerprint="2222", freq=5745),
+        ProbeEvent(mac="ba:22:22:22:22:02", fingerprint="2222", freq=5745),
+    ]
+    stub(StubBackend(events=events, die_after=OSError("done")))
+
+    cli.main(PROBE_ARGS)
+
+    err = capsys.readouterr().err
+    assert err.count("capture crossed bands, 2412 MHz (2.4 GHz) to 5745 MHz (5 GHz)") == 1
+    assert "counted twice" in err
+    assert "sudo iw dev wlan0mon set freq 2412" in err
+
+
+def test_band_crossings_are_never_suppressed(stub, capsys):
+    """The hop budget must not hide the change that splits a device in two."""
+    # Three hops to exhaust the budget, then three crossings.
+    freqs = [2412, 2437, 2462, 2412, 5180, 2412, 5745]
+    stub(StubBackend(
+        events=[ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=f)
+                for f in freqs],
+        die_after=OSError("done"),
+    ))
+
+    cli.main(PROBE_ARGS)
+
+    err = capsys.readouterr().err
+    # Said once in full, then counted and summarised.
+    assert err.count("crossed bands") == 1
+    assert "crossing between them 3 times" in err
+    assert err.count("further hops within the band will not be reported") == 1
+
+
+def test_the_run_reports_which_channels_it_covered(stub, capsys):
+    freqs = [2412, 2437, 5180]
+    stub(StubBackend(
+        events=[ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=f)
+                for f in freqs],
+        die_after=OSError("done"),
+    ))
+
+    cli.main(PROBE_ARGS)
+
+    err = capsys.readouterr().err
+    assert "covers 3 channels (2412, 2437, 5180 MHz) across 2 band(s)" in err
+    assert "crossing between them 1 times" in err
+
+
+def test_a_single_channel_run_says_nothing_about_channels(stub, capsys):
+    stub(StubBackend(
+        events=[ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=2412)],
+        die_after=OSError("done"),
+    ))
+
+    cli.main(PROBE_ARGS)
+    assert "channels" not in capsys.readouterr().err
+
+
+def test_the_first_channel_seen_is_not_a_change(stub, capsys):
+    stub(StubBackend(
+        events=[ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=2412)],
+        die_after=OSError("done"),
+    ))
+
+    cli.main(PROBE_ARGS)
+    assert "capture moved" not in capsys.readouterr().err
+
+
+def test_within_band_hop_warnings_are_capped(stub, capsys):
+    freqs = [2412, 2437, 2462, 2412, 2437, 2462]
+    stub(StubBackend(
+        events=[ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=f)
+                for f in freqs],
+        die_after=OSError("done"),
+    ))
+
+    cli.main(PROBE_ARGS)
+
+    err = capsys.readouterr().err
+    assert err.count("capture moved from") == 3
+    assert "further hops within the band will not be reported" in err
+
+
+def test_probes_without_a_frequency_are_not_a_change(stub, capsys):
+    events = [
+        ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=2412),
+        ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=None),
+        ProbeEvent(mac="aa:11:11:11:11:01", fingerprint="1111", freq=2412),
+    ]
+    stub(StubBackend(events=events, die_after=OSError("done")))
+
+    cli.main(PROBE_ARGS)
+    assert "capture moved" not in capsys.readouterr().err
+
+
 def test_verbose_prints_each_probe(stub, capsys):
     events = [ProbeEvent(mac="aa:11:11:11:11:01", ssid="HomeNet", rssi=-51,
                          fingerprint="1111111111111111")]

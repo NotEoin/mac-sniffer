@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-from ..utils import compute_ie_fingerprint, parse_ies
+from ..utils import compute_ie_fingerprint, parse_channel_mhz, parse_ies
 from .base import ProbeEvent, SnifferBackend
 
 # wlan.fc.type == 0 (management), wlan.fc.subtype == 4 (probe request)
@@ -56,6 +56,7 @@ class PysharkBackend(SnifferBackend):
                         rssi=self._extract_rssi(pkt),
                         ts=time.time(),
                         fingerprint=self._extract_fingerprint(pkt),
+                        freq=self._extract_freq(pkt),
                     )
                 )
         finally:
@@ -101,6 +102,14 @@ class PysharkBackend(SnifferBackend):
             return int(pkt.radiotap.dbm_antsignal)
         except (AttributeError, TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _extract_freq(pkt) -> int | None:
+        try:
+            raw = pkt.get_raw_packet()
+        except Exception:
+            return None
+        return parse_channel_mhz(raw) if raw else None
 
     @staticmethod
     def _extract_fingerprint(pkt) -> str | None:
