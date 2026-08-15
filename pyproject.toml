@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "probe-sniffer"
+description = "Count nearby devices by passively sniffing 802.11 probe requests"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "NotEoin" }]
+keywords = ["wifi", "802.11", "probe-request", "monitor-mode", "scapy"]
+dynamic = ["version"]
+dependencies = ["scapy>=2.5.0"]
+
+[project.optional-dependencies]
+pyshark = ["pyshark>=0.6"]
+dev = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/NotEoin/mac-sniffer"
+Issues = "https://github.com/NotEoin/mac-sniffer/issues"
+
+[project.scripts]
+probe-sniffer = "probe_sniffer.cli:main"
+
+[tool.setuptools]
+packages = ["probe_sniffer", "probe_sniffer.backends"]
+
+[tool.setuptools.dynamic]
+version = { attr = "probe_sniffer.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
