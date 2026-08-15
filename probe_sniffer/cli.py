@@ -120,7 +120,10 @@ def main(argv: list[str] | None = None) -> int:
             ssid = f" ssid={ev.ssid!r}" if ev.ssid else ""
             rssi = f" rssi={ev.rssi}dBm" if ev.rssi is not None else ""
             fp = f" fp={ev.fingerprint[:8]}" if ev.fingerprint else " fp=-"
-            print(f"  probe  {ev.mac}{ssid}{rssi}{fp}", file=sys.stderr)
+            # Flushed like the interval reports: piped to a file, stderr is
+            # block-buffered, and a killed capture loses whatever is still in
+            # the buffer — which is most of a short run.
+            print(f"  probe  {ev.mac}{ssid}{rssi}{fp}", file=sys.stderr, flush=True)
 
     backend = _build_backend(args.backend, args.iface, on_event)
 
