@@ -130,9 +130,9 @@ def test_snapshot_records_metadata_and_does_not_alias_state(clock):
     assert record.randomized
     assert record.last_ssid == "HomeNet"   # kept: the later probe was a wildcard
     assert record.last_rssi == -48
-    assert record.macs == {"aa:11:11:11:11:01", "ba:22:22:22:22:02"}
+    assert set(record.macs) == {"aa:11:11:11:11:01", "ba:22:22:22:22:02"}
 
-    record.macs.add("spoofed")
+    record.macs["spoofed"] = clock.now
     assert tracker.stats().macs_in_window == 2
 
 
@@ -147,3 +147,159 @@ def test_addresses_are_normalized_before_clustering(clock):
     tracker.observe("3C-22-FB-11-22-33")
     tracker.observe(UNIVERSAL_A)
     assert tracker.count() == 1
+
+
+def test_macs_seen_is_scoped_to_the_window(clock):
+    """macs-seen is scoped to the window, not to the cluster's lifetime.
+
+    Otherwise clustered and per-MAC counting disagree about macs-seen on the
+    same traffic, and the comparison the README invites is nonsense.
+    """
+    tracker = make_tracker(clock, window_seconds=300)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_PIXEL)
+
+    clock.advance(200)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_PIXEL)
+    assert tracker.stats().macs_in_window == 2
+
+    # The first address has now aged out, but the phone is still here.
+    clock.advance(200)
+    tracker.observe("ca:33:33:33:33:03", fingerprint=FP_PIXEL)
+
+    stats = tracker.stats()
+    assert stats.active_in_window == 1
+    assert stats.macs_in_window == 2      # not 3: the first one is stale
+
+
+def test_a_long_lived_cluster_does_not_grow_without_bound(clock):
+    tracker = make_tracker(clock, window_seconds=300)
+    for i in range(50):
+        tracker.observe(f"aa:11:11:11:11:{i:02x}", fingerprint=FP_PIXEL)
+        clock.advance(60)
+
+    (record,) = tracker.snapshot()
+    assert tracker.count() == 1
+    assert len(record.macs) <= 6          # a 300s window at one a minute
+
+
+# ---- joining clusters through a shared address ---------------------------
+
+FP_24GHZ = "aaaaaaaaaaaaaaaa"   # a dual-band device on 2.4 GHz
+FP_5GHZ = "bbbbbbbbbbbbbbbb"    # the same radio on 5 GHz
+
+
+def test_one_address_under_two_fingerprints_is_one_device(clock):
+    """A dual-band radio advertises different elements per band.
+
+    The address is the evidence that the two fingerprints are one device.
+    """
+    tracker = make_tracker(clock)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_24GHZ)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_5GHZ)
+
+    assert tracker.count() == 1
+    stats = tracker.stats()
+    assert stats.total_unique_ever == 1
+    assert stats.macs_in_window == 1
+
+
+def test_the_join_survives_a_rotation(clock):
+    tracker = make_tracker(clock)
+    # Seen on both bands under one address, then rotates and is seen again.
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_24GHZ)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_5GHZ)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_24GHZ)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_5GHZ)
+
+    assert tracker.count() == 1
+    assert tracker.stats().macs_in_window == 2
+
+
+def test_two_established_clusters_join_when_an_address_bridges_them(clock):
+    tracker = make_tracker(clock)
+    # Two clusters build up separately...
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_24GHZ)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_24GHZ)
+    tracker.observe("ca:33:33:33:33:03", fingerprint=FP_5GHZ)
+    assert tracker.count() == 2
+
+    # ...then one address turns up under both.
+    tracker.observe("ca:33:33:33:33:03", fingerprint=FP_24GHZ)
+
+    assert tracker.count() == 1
+    record = tracker.snapshot()[0]
+    assert set(record.macs) == {
+        "aa:11:11:11:11:01", "ba:22:22:22:22:02", "ca:33:33:33:33:03",
+    }
+    assert record.hits == 4
+
+
+def test_joining_keeps_the_earliest_first_seen(clock):
+    tracker = make_tracker(clock)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_24GHZ)
+    start = clock.now
+
+    clock.advance(30)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_5GHZ)
+    clock.advance(10)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_24GHZ)
+
+    (record,) = tracker.snapshot()
+    assert record.first_seen == start
+    assert record.last_seen == clock.now
+
+
+def test_unrelated_devices_are_not_joined(clock):
+    tracker = make_tracker(clock)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_24GHZ)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_5GHZ)
+    assert tracker.count() == 2
+
+
+def test_universal_addresses_are_untouched_by_joining(clock):
+    tracker = make_tracker(clock)
+    tracker.observe(UNIVERSAL_A, fingerprint=FP_24GHZ)
+    tracker.observe(UNIVERSAL_A, fingerprint=FP_5GHZ)
+    tracker.observe(UNIVERSAL_B, fingerprint=FP_24GHZ)
+
+    # Universal addresses were never keyed on the fingerprint to begin with.
+    assert tracker.count() == 2
+
+
+def test_joining_is_off_when_clustering_is(clock):
+    tracker = make_tracker(clock, cluster_by_fingerprint=False)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_24GHZ)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_5GHZ)
+    assert tracker.count() == 2
+
+
+def test_the_join_bookkeeping_does_not_grow_without_bound(clock):
+    tracker = make_tracker(clock, window_seconds=60)
+    for i in range(40):
+        mac = f"aa:11:11:11:11:{i:02x}"
+        tracker.observe(mac, fingerprint=f"fp-{i}")
+        tracker.observe(mac, fingerprint=f"fp-other-{i}")
+        clock.advance(30)
+
+    assert tracker.count() <= 2
+    assert len(tracker._cluster_of_mac) <= 4
+    assert len(tracker._merged_into) <= 4
+
+
+def test_a_fingerprint_first_seen_during_a_join_is_remembered(clock):
+    """Regression: the second fingerprint had no cluster of its own yet.
+
+    Returning early without recording the link lost it, and the next probe
+    carrying that fingerprint opened a second cluster for a known device.
+    """
+    tracker = make_tracker(clock)
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_24GHZ)
+    # First sighting of the 5 GHz fingerprint, under a known address.
+    tracker.observe("aa:11:11:11:11:01", fingerprint=FP_5GHZ)
+    # A rotated address carrying only that fingerprint must not start afresh.
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_5GHZ)
+
+    assert tracker.count() == 1
+    assert set(tracker.snapshot()[0].macs) == {
+        "aa:11:11:11:11:01", "ba:22:22:22:22:02",
+    }

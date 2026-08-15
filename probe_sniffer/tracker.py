@@ -36,7 +36,9 @@ class DeviceRecord:
     last_ssid: str | None = None
     last_rssi: int | None = None
     randomized: bool = False
-    macs: set[str] = field(default_factory=set)
+    # address -> when it was last heard, so the count can be scoped to the
+    # window. A cluster outlives the addresses it was built from.
+    macs: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -70,6 +72,10 @@ class DeviceTracker:
         self._lock = threading.Lock()
         self._devices: dict[str, DeviceRecord] = {}
         self._total_unique_ever: set[str] = set()
+        # Which cluster an address currently belongs to, and where clusters
+        # have been merged away to. See :meth:`_link_locked`.
+        self._cluster_of_mac: dict[str, str] = {}
+        self._merged_into: dict[str, str] = {}
 
     # ---- ingest -----------------------------------------------------------
 
@@ -83,6 +89,70 @@ class DeviceTracker:
         if self.cluster_by_fingerprint and randomized and fingerprint:
             return f"fp:{fingerprint}"
         return f"mac:{mac}"
+
+    def _resolve(self, key: str) -> str:
+        """Follow a cluster key through any merges it has been through."""
+        seen = 0
+        while key in self._merged_into and seen < len(self._merged_into) + 1:
+            key = self._merged_into[key]
+            seen += 1
+        return key
+
+    def _link_locked(self, mac: str, key: str, now: float) -> str:
+        """Return the cluster this observation belongs to, merging if needed.
+
+        A randomised address is 46 bits of noise, so one turning up under two
+        fingerprints is not a coincidence: it is one radio that fingerprints
+        differently in different circumstances. The clearest case is a
+        dual-band device, which advertises different elements on 2.4 GHz than
+        on 5 GHz and so splits in two — measured at 12-39% of the count.
+
+        So join the two clusters, rather than weakening the fingerprint to
+        cover it.
+        """
+        key = self._resolve(key)
+        previous = self._cluster_of_mac.get(mac)
+        if previous is not None:
+            previous = self._resolve(previous)
+            if previous != key and previous in self._devices:
+                key = self._merge_locked(previous, key, now)
+        self._cluster_of_mac[mac] = key
+        return key
+
+    def _merge_locked(self, one: str, other: str, now: float) -> str:
+        """Fold two clusters together, keeping the one seen first."""
+        if one == other:
+            return one
+
+        left, right = self._devices.get(one), self._devices.get(other)
+        # One side may have no record yet — this is the first probe carrying
+        # that fingerprint. Remember the link anyway, or the next probe that
+        # carries it starts a second cluster for a device we have already
+        # identified.
+        if right is None:
+            self._merged_into[other] = one
+            return one
+        if left is None:
+            self._merged_into[one] = other
+            return other
+
+        survivor, absorbed = (left, right) if left.first_seen <= right.first_seen \
+            else (right, left)
+        survivor.first_seen = min(left.first_seen, right.first_seen)
+        survivor.last_seen = max(left.last_seen, right.last_seen)
+        survivor.hits += absorbed.hits
+        survivor.macs.update(absorbed.macs)
+        survivor.randomized = survivor.randomized or absorbed.randomized
+        if survivor.last_ssid is None:
+            survivor.last_ssid = absorbed.last_ssid
+        if absorbed.last_seen > survivor.last_seen or survivor.last_rssi is None:
+            survivor.last_rssi = absorbed.last_rssi if absorbed.last_rssi is not None \
+                else survivor.last_rssi
+
+        del self._devices[absorbed.key]
+        self._merged_into[absorbed.key] = survivor.key
+        self._total_unique_ever.discard(absorbed.key)
+        return survivor.key
 
     def observe(
         self,
@@ -106,6 +176,7 @@ class DeviceTracker:
         key = self._cluster_key(mac_norm, randomized, fingerprint)
 
         with self._lock:
+            key = self._link_locked(mac_norm, key, now)
             rec = self._devices.get(key)
             if rec is None:
                 rec = DeviceRecord(
@@ -119,7 +190,7 @@ class DeviceTracker:
             else:
                 rec.last_seen = now
             rec.hits += 1
-            rec.macs.add(mac_norm)
+            rec.macs[mac_norm] = now
             if ssid:
                 rec.last_ssid = ssid
             if rssi is not None:
@@ -132,6 +203,26 @@ class DeviceTracker:
         stale = [k for k, r in self._devices.items() if r.last_seen < cutoff]
         for k in stale:
             del self._devices[k]
+        # Drop the addresses a surviving cluster has stopped using. Without
+        # this a phone that rotates every few minutes grows its cluster for
+        # as long as the capture runs.
+        for rec in self._devices.values():
+            if any(seen < cutoff for seen in rec.macs.values()):
+                rec.macs = {m: t for m, t in rec.macs.items() if t >= cutoff}
+
+        # The merge bookkeeping is scoped to the live clusters for the same
+        # reason: neither map should outgrow what is actually in the window.
+        if stale:
+            self._cluster_of_mac = {
+                mac: key
+                for key, rec in self._devices.items()
+                for mac in rec.macs
+            }
+            self._merged_into = {
+                absorbed: survivor
+                for absorbed, survivor in self._merged_into.items()
+                if self._resolve(survivor) in self._devices
+            }
 
     def count(self) -> int:
         """Number of unique device clusters seen within the sliding window."""
@@ -154,7 +245,7 @@ class DeviceTracker:
                     last_ssid=r.last_ssid,
                     last_rssi=r.last_rssi,
                     randomized=r.randomized,
-                    macs=set(r.macs),
+                    macs=dict(r.macs),
                 )
                 for r in self._devices.values()
             ]
