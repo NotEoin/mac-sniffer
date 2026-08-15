@@ -55,10 +55,62 @@ def is_valid_unicast(mac: str) -> bool:
     return not is_multicast(mac)
 
 
+# Radiotap presence bits and the one Flags bit we care about.
+_RADIOTAP_TSFT = 1 << 0
+_RADIOTAP_FLAGS = 1 << 1
+_RADIOTAP_EXT = 1 << 31
+_RADIOTAP_FLAG_FCS = 0x10
+
+
+def has_trailing_fcs(raw_frame: bytes) -> bool:
+    """True if radiotap says the frame carries its 4-byte FCS at the end.
+
+    Some drivers hand the checksum up with the frame and some strip it. Left
+    in place it parses as one more Information Element about 1% of the time,
+    which is enough to give a device a fresh fingerprint on every probe.
+
+    Only the first two presence bits matter: TSFT (8 bytes, 8-byte aligned)
+    is the sole field that can sit in front of Flags.
+    """
+    if len(raw_frame) < 8:
+        return False
+    present = int.from_bytes(raw_frame[4:8], "little")
+    if not present & _RADIOTAP_FLAGS:
+        return False
+
+    # Chained presence bitmaps sit between the header and the field data.
+    offset = 8
+    chained = present
+    while chained & _RADIOTAP_EXT:
+        if offset + 4 > len(raw_frame):
+            return False
+        chained = int.from_bytes(raw_frame[offset:offset + 4], "little")
+        offset += 4
+
+    if present & _RADIOTAP_TSFT:
+        offset += -offset % 8
+        offset += 8
+    if offset >= len(raw_frame):
+        return False
+    return bool(raw_frame[offset] & _RADIOTAP_FLAG_FCS)
+
+
 # IE IDs that vary per-frame from the same device and would destabilize the
 # fingerprint if included. SSID (0) changes between wildcard and directed
 # probes; DS Param Set (3) carries the current channel during channel hops.
 _FINGERPRINT_SKIP_IDS = frozenset({0, 3})
+
+# Elements whose contents describe the radio itself: supported rates, extended
+# rates, HT/VHT/HE capabilities, extended capabilities. These are the parts of
+# a probe that belong to the chipset and driver, so their bodies are hashed.
+_STABLE_BODY_IDS = frozenset({1, 45, 50, 59, 107, 127, 191, 255})
+
+# Every other element contributes only its id and length. Peer-to-peer and
+# Wi-Fi Aware devices put session state in theirs — counters and nonces that
+# change on every single frame — and hashing those bodies hands the device a
+# brand new identity with each probe it sends.
+_VENDOR_SPECIFIC_ID = 221
+_VENDOR_PREFIX_LEN = 4   # OUI plus vendor-specific type: stable, identifying
 
 
 def parse_ies(raw_frame: bytes) -> list[tuple[int, bytes]]:
@@ -68,6 +120,9 @@ def parse_ies(raw_frame: bytes) -> list[tuple[int, bytes]]:
     (little-endian) hold the total radiotap length. Probe request body starts
     immediately after the 24-byte 802.11 MAC header; there is no fixed body, so
     IEs begin at offset (radiotap_len + 24).
+
+    A trailing FCS is dropped when radiotap reports one, so it cannot be read
+    as an extra IE.
 
     Returns ``[]`` if the buffer is truncated or does not start with a radiotap
     header — a capture taken as plain DLT_IEEE802_11 begins with the frame
@@ -79,14 +134,16 @@ def parse_ies(raw_frame: bytes) -> list[tuple[int, bytes]]:
     radiotap_len = raw_frame[2] | (raw_frame[3] << 8)
     if radiotap_len < 8 or radiotap_len + 24 > len(raw_frame):
         return []
+
+    end = len(raw_frame) - 4 if has_trailing_fcs(raw_frame) else len(raw_frame)
     offset = radiotap_len + 24
     out: list[tuple[int, bytes]] = []
-    while offset + 2 <= len(raw_frame):
+    while offset + 2 <= end:
         tag_id = raw_frame[offset]
         tag_len = raw_frame[offset + 1]
         body_start = offset + 2
         body_end = body_start + tag_len
-        if body_end > len(raw_frame):
+        if body_end > end:
             break
         out.append((tag_id, raw_frame[body_start:body_end]))
         offset = body_end
@@ -95,6 +152,11 @@ def parse_ies(raw_frame: bytes) -> list[tuple[int, bytes]]:
 
 def compute_ie_fingerprint(ies: Iterable[tuple[int, bytes]]) -> str | None:
     """Hash an ordered list of (IE id, IE body) pairs into a stable fingerprint.
+
+    The id, length and order of every element are hashed. Bodies are hashed
+    only where they describe the radio (see :data:`_STABLE_BODY_IDS`), plus the
+    OUI of each vendor-specific element — the rest carry per-frame session
+    state on some devices.
 
     Returns ``None`` if the IE set is too sparse to be discriminating (e.g. a
     bare probe with only "supported rates"). Callers should fall back to per-MAC
@@ -107,5 +169,8 @@ def compute_ie_fingerprint(ies: Iterable[tuple[int, bytes]]) -> str | None:
     h = hashlib.blake2b(digest_size=8)
     for id_, body in relevant:
         h.update(bytes([id_ & 0xFF, len(body) & 0xFF]))
-        h.update(body)
+        if id_ in _STABLE_BODY_IDS:
+            h.update(body)
+        elif id_ == _VENDOR_SPECIFIC_ID:
+            h.update(body[:_VENDOR_PREFIX_LEN])
     return h.hexdigest()

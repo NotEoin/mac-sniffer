@@ -166,6 +166,39 @@ def test_scapy_handler_matches_the_raw_frame_fingerprint(scapy_capture):
     assert events[0].fingerprint == compute_ie_fingerprint(parse_ies(bytes(packet)))
 
 
+@pytest.mark.parametrize("with_timestamp", [False, True])
+def test_fcs_detection_matches_the_radiotap_scapy_builds(with_timestamp):
+    """Cross-check the hand-rolled header walk against scapy's own layout."""
+    from scapy.layers.dot11 import Dot11, Dot11Elt, Dot11ProbeReq, RadioTap
+
+    from probe_sniffer.utils import has_trailing_fcs, parse_ies
+
+    def frame(flags: str) -> bytes:
+        present = "Flags+dBm_AntSignal"
+        extra = {}
+        if with_timestamp:
+            present = "TSFT+" + present
+            extra["mac_timestamp"] = 99
+        header = RadioTap(present=present, Flags=flags, dBm_AntSignal=-42, **extra)
+        body = (
+            Dot11(type=0, subtype=4, addr1="ff:ff:ff:ff:ff:ff",
+                  addr2="aa:bb:cc:dd:ee:ff", addr3="ff:ff:ff:ff:ff:ff")
+            / Dot11ProbeReq()
+            / Dot11Elt(ID=0, info=b"Net")
+            / Dot11Elt(ID=1, info=b"\x02\x04")
+            / Dot11Elt(ID=45, info=b"\x2d\x40")
+        )
+        return bytes(header / body) + b"\xdd\x02\xff\xee"   # stand-in checksum
+
+    tags = [(0, b"Net"), (1, b"\x02\x04"), (45, b"\x2d\x40")]
+
+    assert has_trailing_fcs(frame("FCS"))
+    assert parse_ies(frame("FCS")) == tags
+
+    assert not has_trailing_fcs(frame(""))
+    assert parse_ies(frame("")) == tags + [(221, b"\xff\xee")]
+
+
 # ---- pyshark field extraction --------------------------------------------
 
 
