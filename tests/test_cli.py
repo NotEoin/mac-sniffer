@@ -47,6 +47,23 @@ def test_unknown_backend_is_rejected():
         cli._build_backend("tcpdump", "wlan0mon", lambda ev: None)
 
 
+def test_the_permissions_hint_matches_the_backend(monkeypatch, capsys):
+    monkeypatch.setattr(cli.os, "geteuid", lambda: 1000)
+
+    cli._warn_if_not_root("scapy")
+    assert "needs root" in capsys.readouterr().err
+
+    cli._warn_if_not_root("pyshark")
+    assert "wireshark" in capsys.readouterr().err
+
+
+def test_no_permissions_hint_when_root(monkeypatch, capsys):
+    monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
+
+    cli._warn_if_not_root("scapy")
+    assert capsys.readouterr().err == ""
+
+
 class StubBackend:
     """Stands in for a capture: replays events, then fails or dies as configured."""
 

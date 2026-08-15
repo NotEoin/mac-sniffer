@@ -77,18 +77,30 @@ def _build_backend(name: str, iface: str, on_event) -> SnifferBackend:
     raise ValueError(f"unknown backend: {name}")
 
 
-def _warn_if_not_root() -> None:
-    if hasattr(os, "geteuid") and os.geteuid() != 0:
+def _warn_if_not_root(backend: str) -> None:
+    if not hasattr(os, "geteuid") or os.geteuid() == 0:
+        return
+    if backend == "pyshark":
+        # tshark captures through dumpcap, which usually ships with the
+        # capabilities already granted to members of the wireshark group.
         print(
-            "warning: not running as root. Live capture on a monitor-mode "
-            "interface usually requires root (or CAP_NET_RAW + CAP_NET_ADMIN).",
+            "note: not running as root. The pyshark backend can still capture "
+            "if your user is in the 'wireshark' group.",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "warning: not running as root. The scapy backend opens a raw "
+            "socket, which needs root (or CAP_NET_RAW + CAP_NET_ADMIN on the "
+            "python binary). The pyshark backend works from the 'wireshark' "
+            "group instead.",
             file=sys.stderr,
         )
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    _warn_if_not_root()
+    _warn_if_not_root(args.backend)
 
     tracker = DeviceTracker(
         window_seconds=args.window,

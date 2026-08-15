@@ -20,11 +20,13 @@ class ScapyBackend(SnifferBackend):
 
         # store=False so packets are not retained in memory.
         # stop_filter is checked after each packet, giving us a clean shutdown.
+        # No monitor=True: where scapy honours it (libpcap) it asks the driver
+        # to switch the interface into monitor mode, which fails on one that is
+        # already there — the same way tshark's -I does.
         sniff(
             iface=self.iface,
             prn=self.handle_packet,
             store=False,
-            monitor=True,
             stop_filter=lambda _pkt: self.stopping,
         )
 
