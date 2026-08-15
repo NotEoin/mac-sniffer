@@ -29,9 +29,12 @@ class PysharkBackend(SnifferBackend):
         # asyncio.get_event_loop() and blow up here rather than creating one.
         asyncio.set_event_loop(asyncio.new_event_loop())
 
+        # No monitor_mode=True: that asks tshark to *switch* the interface
+        # into monitor mode, which the driver refuses for an interface that is
+        # already one (the only kind we are given). dumpcap then exits and the
+        # capture yields nothing at all.
         capture = pyshark.LiveCapture(
             interface=self.iface,
-            monitor_mode=True,
             display_filter=_DISPLAY_FILTER,
             include_raw=True,
             use_json=True,
