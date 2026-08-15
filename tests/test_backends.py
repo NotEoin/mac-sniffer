@@ -5,6 +5,7 @@ so nothing here needs an interface, monitor mode or root.
 """
 
 import threading
+import time
 
 import pytest
 
@@ -294,3 +295,58 @@ def test_pyshark_has_no_raw_frame_without_include_raw():
             raise AttributeError("include_raw was not set")
 
     assert PysharkBackend._raw_frame(NoRawPacket()) is None
+
+
+# ---- the capture pipeline dying under us ---------------------------------
+
+
+class FakeProcess:
+    def __init__(self, returncode=None):
+        self.returncode = returncode
+
+
+class FakeCapture:
+    def __init__(self, processes):
+        self._running_processes = set(processes)
+
+
+def test_pyshark_fails_when_a_capture_process_exits():
+    """Killing dumpcap leaves tshark up, so the packet loop blocks for ever.
+
+    Measured: the count read zero for ten minutes after the capture died.
+    """
+    backend = PysharkBackend(iface="wlan0mon", on_event=lambda ev: None)
+    alive, dead = FakeProcess(), FakeProcess(returncode=1)
+
+    backend._watch_processes(FakeCapture([alive, dead]), poll_seconds=0.01)
+
+    assert backend.error is not None
+    assert "capture process exited" in str(backend.error)
+    assert backend.stopping
+
+
+def test_pyshark_watchdog_leaves_a_healthy_capture_alone():
+    backend = PysharkBackend(iface="wlan0mon", on_event=lambda ev: None)
+    capture = FakeCapture([FakeProcess(), FakeProcess()])
+
+    watcher = threading.Thread(
+        target=backend._watch_processes, args=(capture, 0.01), daemon=True
+    )
+    watcher.start()
+    time.sleep(0.1)
+
+    assert backend.error is None
+    backend._stop.set()
+    watcher.join(timeout=1.0)
+
+
+def test_pyshark_watchdog_gives_up_on_an_unfamiliar_pyshark():
+    """The attribute is private; a rename must not break capturing."""
+    class Bare:
+        pass
+
+    backend = PysharkBackend(iface="wlan0mon", on_event=lambda ev: None)
+    backend._watch_processes(Bare(), poll_seconds=0.01)
+
+    assert backend.error is None
+    assert not backend.stopping

@@ -11,6 +11,7 @@ match into the 802.11 management header on every driver.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 
 from ..utils import compute_ie_fingerprint, parse_channel_mhz, parse_ies
@@ -39,6 +40,18 @@ class PysharkBackend(SnifferBackend):
             include_raw=True,
             use_json=True,
         )
+
+        # tshark and dumpcap are separate processes. Kill the one holding the
+        # interface and tshark stays up with its output open, so the loop
+        # below simply blocks for ever on packets that will never arrive and
+        # the count reads zero. Watch the processes instead of waiting.
+        watchdog = threading.Thread(
+            target=self._watch_processes,
+            args=(capture,),
+            name=f"{type(self).__name__}-watchdog",
+            daemon=True,
+        )
+        watchdog.start()
 
         try:
             for pkt in capture.sniff_continuously():
@@ -72,6 +85,36 @@ class PysharkBackend(SnifferBackend):
                 pass
 
     # ---- field extraction helpers (defensive: tshark field names vary) ----
+
+    def _watch_processes(self, capture, poll_seconds: float = 2.0) -> None:
+        """Fail the capture if any of tshark's processes exits under us.
+
+        pyshark tracks the processes it started. The attribute is private, so
+        this gives up quietly if a future release renames it — the capture
+        still works, it just goes back to being unable to tell a dead pipeline
+        from a quiet channel.
+        """
+        processes = getattr(capture, "_running_processes", None)
+        if processes is None:
+            return
+
+        # Wait for the processes to be registered before watching them.
+        while not processes and not self._stop.wait(poll_seconds):
+            processes = getattr(capture, "_running_processes", None) or set()
+
+        while not self._stop.wait(poll_seconds):
+            for process in list(processes):
+                if process.returncode is not None:
+                    self._capture_died(process.returncode)
+                    return
+
+    def _capture_died(self, returncode: int) -> None:
+        self._error = RuntimeError(
+            f"a capture process exited (status {returncode}) while sniffing; "
+            "the interface may have gone down or been taken over"
+        )
+        self._stop.set()
+        self._finished.set()
 
     @staticmethod
     def _extract_mac(pkt) -> str | None:
