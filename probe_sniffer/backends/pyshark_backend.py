@@ -10,6 +10,7 @@ match into the 802.11 management header on every driver.
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 from ..utils import compute_ie_fingerprint, parse_ies
@@ -22,6 +23,11 @@ _DISPLAY_FILTER = "wlan.fc.type_subtype == 0x04"
 class PysharkBackend(SnifferBackend):
     def _run(self) -> None:
         import pyshark  # type: ignore
+
+        # pyshark drives tshark through asyncio, and we run in a worker thread
+        # that has no event loop of its own. Older pyshark releases call
+        # asyncio.get_event_loop() and blow up here rather than creating one.
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
         capture = pyshark.LiveCapture(
             interface=self.iface,
@@ -66,7 +72,12 @@ class PysharkBackend(SnifferBackend):
         for attr in ("sa", "ta", "addr2"):
             val = getattr(wlan, attr, None)
             if val:
-                return str(val)
+                # use_json=True can hand back a list when tshark reports the
+                # field more than once; every copy is the same address.
+                if isinstance(val, (list, tuple)):
+                    val = val[0] if val else None
+                if val:
+                    return str(val)
         return None
 
     @staticmethod
@@ -85,7 +96,7 @@ class PysharkBackend(SnifferBackend):
     def _extract_rssi(pkt) -> int | None:
         try:
             return int(pkt.radiotap.dbm_antsignal)
-        except (AttributeError, ValueError):
+        except (AttributeError, TypeError, ValueError):
             return None
 
     @staticmethod

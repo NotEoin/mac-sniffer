@@ -6,7 +6,7 @@ The IEEE 802 MAC address space carries two flags in the first octet:
     bit 1       -> U/L bit:  0 = universally administered (OUI assigned by IEEE)
                               1 = locally administered (often randomized)
 
-Modern phones (iOS 14+, Android 10+, recent Windows) rotate locally-administered
+Modern phones (iOS 8+, Android 8+, recent Windows) rotate locally-administered
 MACs when sending probe requests. To re-aggregate them we hash the probe's
 Information Elements (capabilities, supported rates, vendor tags) — the IE
 fingerprint stays stable across the MAC rotations of a single radio.
@@ -64,14 +64,21 @@ _FINGERPRINT_SKIP_IDS = frozenset({0, 3})
 def parse_ies(raw_frame: bytes) -> list[tuple[int, bytes]]:
     """Parse IEs out of a raw 802.11 frame including a radiotap header.
 
-    Radiotap header: bytes 2-3 (little-endian) hold the total radiotap length.
-    Probe request body starts immediately after the 24-byte 802.11 MAC header;
-    there is no fixed body, so IEs begin at offset (radiotap_len + 24).
-    Returns ``[]`` if the buffer is truncated or malformed.
+    Radiotap header: byte 0 is the version (always 0) and bytes 2-3
+    (little-endian) hold the total radiotap length. Probe request body starts
+    immediately after the 24-byte 802.11 MAC header; there is no fixed body, so
+    IEs begin at offset (radiotap_len + 24).
+
+    Returns ``[]`` if the buffer is truncated or does not start with a radiotap
+    header — a capture taken as plain DLT_IEEE802_11 begins with the frame
+    control field instead, and parsing that as radiotap yields IEs made of
+    whatever bytes happen to line up.
     """
-    if len(raw_frame) < 28:
+    if len(raw_frame) < 28 or raw_frame[0] != 0:
         return []
     radiotap_len = raw_frame[2] | (raw_frame[3] << 8)
+    if radiotap_len < 8 or radiotap_len + 24 > len(raw_frame):
+        return []
     offset = radiotap_len + 24
     out: list[tuple[int, bytes]] = []
     while offset + 2 <= len(raw_frame):
