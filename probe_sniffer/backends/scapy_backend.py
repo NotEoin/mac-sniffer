@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from ..utils import compute_ie_fingerprint
+from ..utils import compute_ie_fingerprint, parse_ies
 from .base import ProbeEvent, SnifferBackend
 
 
@@ -30,12 +30,7 @@ class ScapyBackend(SnifferBackend):
 
     def handle_packet(self, pkt) -> None:
         """Turn one sniffed scapy packet into a :class:`ProbeEvent`."""
-        from scapy.layers.dot11 import (  # type: ignore
-            Dot11,
-            Dot11Elt,
-            Dot11ProbeReq,
-            RadioTap,
-        )
+        from scapy.layers.dot11 import Dot11, Dot11ProbeReq, RadioTap  # type: ignore
 
         if not pkt.haslayer(Dot11ProbeReq):
             return
@@ -45,18 +40,19 @@ class ScapyBackend(SnifferBackend):
 
         mac = dot11.addr2
 
+        # Parse the IEs out of the raw frame rather than walking scapy's
+        # dissected layers. On a frame that came off the air scapy turns the
+        # rates tags into Dot11EltRates and leaves everything after them as
+        # Raw, so the layer walk silently drops the HT, extended-capability
+        # and vendor tags — the ones that make a fingerprint discriminating.
+        raw = getattr(pkt, "original", None) or bytes(pkt)
+        ies = parse_ies(raw)
+
         ssid: str | None = None
-        ies: list[tuple[int, bytes]] = []
-        try:
-            elt = pkt.getlayer(Dot11ProbeReq).payload
-            while isinstance(elt, Dot11Elt):
-                body = bytes(elt.info or b"")
-                ies.append((int(elt.ID), body))
-                if elt.ID == 0 and ssid is None:
-                    ssid = body.decode("utf-8", errors="replace") or None
-                elt = elt.payload
-        except Exception:
-            pass
+        for tag_id, body in ies:
+            if tag_id == 0:
+                ssid = body.decode("utf-8", errors="replace") or None
+                break
 
         fingerprint = compute_ie_fingerprint(ies)
 
