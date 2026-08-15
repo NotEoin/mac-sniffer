@@ -9,3 +9,4 @@ dependencies:
       - scapy>=2.5.0
       - pyshark>=0.6
       - pytest>=8
+      - matplotlib>=3.8   # only for tools/plot_capture.py
