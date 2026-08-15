@@ -122,6 +122,12 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
+    try:
+        backend.start()
+    except Exception as exc:
+        print(f"failed to start backend: {exc}", file=sys.stderr)
+        return 2
+
     mode_bits = []
     mode_bits.append("fingerprint-clustering" if args.fingerprint else "per-MAC")
     if not args.include_randomized:
@@ -130,19 +136,33 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"probe-sniffer started on {args.iface} via {args.backend} "
         f"(window={args.window}s, interval={args.interval}s, {mode}).\n"
-        "Press Ctrl-C to stop.\n"
+        "Press Ctrl-C to stop.\n",
+        flush=True,
     )
 
-    try:
-        backend.start()
-    except Exception as exc:
-        print(f"failed to start backend: {exc}", file=sys.stderr)
-        return 2
-
     # Reporter loop. Sleep in small slices so Ctrl-C is snappy.
+    exit_code = 0
     next_report = time.monotonic() + args.interval
     try:
         while not stop_requested:
+            # A capture that dies (interface torn down, tshark refused to
+            # start) would otherwise leave us printing zeroes indefinitely.
+            if not backend.alive:
+                exit_code = 2
+                if backend.error is not None:
+                    print(
+                        f"capture failed: {type(backend.error).__name__}: "
+                        f"{backend.error}",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        "capture ended unexpectedly (is the interface still "
+                        "up and in monitor mode?)",
+                        file=sys.stderr,
+                    )
+                break
+
             now = time.monotonic()
             if now >= next_report:
                 stats = tracker.stats()
@@ -156,7 +176,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     f"[{ts}] {label} in vicinity (last {args.window}s): "
                     f"{stats.active_in_window}{extra}  "
-                    f"[unique-ever={stats.total_unique_ever}]"
+                    f"[unique-ever={stats.total_unique_ever}]",
+                    flush=True,
                 )
                 next_report = now + args.interval
             time.sleep(0.25)
@@ -164,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\nshutting down...", file=sys.stderr)
         backend.stop()
 
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
