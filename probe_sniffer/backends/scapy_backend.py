@@ -67,7 +67,7 @@ class ScapyBackend(SnifferBackend):
                 mac=mac,
                 ssid=ssid,
                 rssi=rssi,
-                ts=time.time(),
+                ts=time.monotonic(),   # matches the tracker's window clock
                 fingerprint=fingerprint,
                 freq=parse_channel_mhz(raw),
             )

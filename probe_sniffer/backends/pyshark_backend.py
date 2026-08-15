@@ -73,7 +73,7 @@ class PysharkBackend(SnifferBackend):
                         mac=mac,
                         ssid=self._ssid_from_ies(ies) or self._extract_ssid(pkt),
                         rssi=self._extract_rssi(pkt),
-                        ts=time.time(),
+                        ts=time.monotonic(),   # matches the tracker's window clock
                         fingerprint=compute_ie_fingerprint(ies) if ies else None,
                         freq=parse_channel_mhz(raw) if raw else None,
                     )

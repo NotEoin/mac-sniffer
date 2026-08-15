@@ -72,7 +72,7 @@ class DeviceTracker:
         include_randomized: bool = True,
         cluster_by_fingerprint: bool = True,
         concurrency_seconds: float = 10.0,
-        clock: Callable[[], float] = time.time,
+        clock: Callable[[], float] = time.monotonic,
     ):
         if window_seconds <= 0:
             raise ValueError("window_seconds must be positive")
@@ -83,6 +83,10 @@ class DeviceTracker:
         # overlapping. Kept short: a handset rotating its address hands over
         # between bursts, so its addresses do not overlap for long.
         self.concurrency_seconds = concurrency_seconds
+        # Monotonic by default, not wall clock. The wall clock can step, and
+        # a window built on it breaks when it does: a backward correction
+        # stalls eviction, a forward one empties the window. The report loop
+        # already schedules on time.monotonic for the same reason.
         # Swappable so replays and tests can drive the window without sleeping.
         self.clock = clock
 

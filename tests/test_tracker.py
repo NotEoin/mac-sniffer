@@ -415,3 +415,10 @@ def test_the_peak_expires_with_the_window(clock):
     stats = tracker.stats()
     assert stats.active_in_window == 1
     assert stats.least_devices_in_window == 1   # that evidence has aged out
+
+
+def test_the_window_runs_on_a_monotonic_clock():
+    """A window built on the wall clock breaks when the clock steps: a
+    backward correction stalls eviction, a forward one empties the window."""
+    import time as time_module
+    assert DeviceTracker().clock is time_module.monotonic
