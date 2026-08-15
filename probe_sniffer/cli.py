@@ -119,13 +119,20 @@ def main(argv: list[str] | None = None) -> int:
         nonlocal stop_requested
         stop_requested = True
 
-    signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
+    previous_handlers = {
+        sig: signal.signal(sig, _shutdown)
+        for sig in (signal.SIGINT, signal.SIGTERM)
+    }
+
+    def _restore_handlers() -> None:
+        for sig, handler in previous_handlers.items():
+            signal.signal(sig, handler)
 
     try:
         backend.start()
     except Exception as exc:
         print(f"failed to start backend: {exc}", file=sys.stderr)
+        _restore_handlers()
         return 2
 
     mode_bits = []
@@ -184,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         print("\nshutting down...", file=sys.stderr)
         backend.stop()
+        _restore_handlers()
 
     return exit_code
 

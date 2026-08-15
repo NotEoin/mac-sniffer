@@ -22,6 +22,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 from .utils import is_locally_administered, is_valid_unicast, normalize_mac
 
@@ -56,12 +57,15 @@ class DeviceTracker:
         window_seconds: int = 300,
         include_randomized: bool = True,
         cluster_by_fingerprint: bool = True,
+        clock: Callable[[], float] = time.time,
     ):
         if window_seconds <= 0:
             raise ValueError("window_seconds must be positive")
         self.window_seconds = window_seconds
         self.include_randomized = include_randomized
         self.cluster_by_fingerprint = cluster_by_fingerprint
+        # Swappable so replays and tests can drive the window without sleeping.
+        self.clock = clock
 
         self._lock = threading.Lock()
         self._devices: dict[str, DeviceRecord] = {}
@@ -98,7 +102,7 @@ class DeviceTracker:
         if randomized and not self.include_randomized:
             return
 
-        now = ts if ts is not None else time.time()
+        now = ts if ts is not None else self.clock()
         key = self._cluster_key(mac_norm, randomized, fingerprint)
 
         with self._lock:
@@ -131,14 +135,14 @@ class DeviceTracker:
 
     def count(self) -> int:
         """Number of unique device clusters seen within the sliding window."""
-        now = time.time()
+        now = self.clock()
         with self._lock:
             self._evict_locked(now)
             return len(self._devices)
 
     def snapshot(self) -> list[DeviceRecord]:
         """All currently-active device records (deep-ish copies)."""
-        now = time.time()
+        now = self.clock()
         with self._lock:
             self._evict_locked(now)
             return [
@@ -156,7 +160,7 @@ class DeviceTracker:
             ]
 
     def stats(self) -> TrackerStats:
-        now = time.time()
+        now = self.clock()
         with self._lock:
             self._evict_locked(now)
             randomized = sum(1 for r in self._devices.values() if r.randomized)

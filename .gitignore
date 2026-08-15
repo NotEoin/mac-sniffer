@@ -1,5 +1,13 @@
 __pycache__/
 *.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# captures - never commit other people's probe requests
+*.pcap
+*.pcapng
 
 # conda / virtualenv prefixes
 .venv/
