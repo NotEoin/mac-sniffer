@@ -250,3 +250,32 @@ def test_no_channel_field_means_no_frequency():
     assert parse_channel_mhz(radiotap(FLAGS_ONLY, b"\x10")) is None
     assert parse_channel_mhz(b"") is None
     assert parse_channel_mhz(radiotap(CHANNEL_ONLY, b"\x00\x00\x00\x00")) is None
+
+
+def test_a_scan_parameter_extension_does_not_change_the_fingerprint():
+    """255/2 is FILS Request Parameters: it carries the current scan's
+    channel time, measured changing on every probe from one address."""
+    def probe(channel_time: bytes):
+        return [
+            (1, b"\x02\x04\x0b\x16"),
+            (45, b"\x2d\x40\x1b\xff"),
+            (255, b"\x02" + channel_time),        # FILS request parameters
+            (255, b"\x23" + b"\x01\x08\x08\x18"),  # HE capabilities
+        ]
+
+    assert compute_ie_fingerprint(probe(b"\x00\x2a")) == \
+           compute_ie_fingerprint(probe(b"\x00\x3e"))
+
+
+def test_he_capabilities_still_identify_the_radio():
+    def probe(he_body: bytes):
+        return [(1, b"\x02\x04"), (255, b"\x23" + he_body)]
+
+    assert compute_ie_fingerprint(probe(b"\x01\x08\x08")) != \
+           compute_ie_fingerprint(probe(b"\x05\x00\x18"))
+
+
+def test_the_extension_id_itself_always_counts():
+    fils = [(1, b"\x02\x04"), (255, b"\x02\x00\x2a")]
+    he = [(1, b"\x02\x04"), (255, b"\x23\x00\x2a")]
+    assert compute_ie_fingerprint(fils) != compute_ie_fingerprint(he)

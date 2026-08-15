@@ -132,9 +132,17 @@ def parse_channel_mhz(raw_frame: bytes) -> int | None:
 _FINGERPRINT_SKIP_IDS = frozenset({0, 3})
 
 # Elements whose contents describe the radio itself: supported rates, extended
-# rates, HT/VHT/HE capabilities, extended capabilities. These are the parts of
+# rates, HT/VHT capabilities, extended capabilities. These are the parts of
 # a probe that belong to the chipset and driver, so their bodies are hashed.
-_STABLE_BODY_IDS = frozenset({1, 45, 50, 59, 107, 127, 191, 255})
+_STABLE_BODY_IDS = frozenset({1, 45, 50, 59, 107, 127, 191})
+
+# Element 255 is a container: its first body byte names the extension. Most
+# describe the radio (35 is HE Capabilities, measured identical across every
+# probe from an address), but 2 is FILS Request Parameters, which carries the
+# channel time of the scan in progress and changes from probe to probe. Its
+# presence and length still count; only the payload behind it is dropped.
+_EXTENSION_ID = 255
+_VOLATILE_EXTENSION_IDS = frozenset({2})
 
 # Every other element contributes only its id and length. Peer-to-peer and
 # Wi-Fi Aware devices put session state in theirs — counters and nonces that
@@ -204,4 +212,8 @@ def compute_ie_fingerprint(ies: Iterable[tuple[int, bytes]]) -> str | None:
             h.update(body)
         elif id_ == _VENDOR_SPECIFIC_ID:
             h.update(body[:_VENDOR_PREFIX_LEN])
+        elif id_ == _EXTENSION_ID and body:
+            h.update(body[:1])
+            if body[0] not in _VOLATILE_EXTENSION_IDS:
+                h.update(body[1:])
     return h.hexdigest()
