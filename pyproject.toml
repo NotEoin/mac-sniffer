@@ -16,6 +16,8 @@ dependencies = ["scapy>=2.5.0"]
 [project.optional-dependencies]
 pyshark = ["pyshark>=0.6"]
 dev = ["pytest>=8"]
+# only for tools/plot_capture.py, which draws the README figure
+plot = ["matplotlib>=3.8"]
 
 [project.urls]
 Homepage = "https://github.com/NotEoin/mac-sniffer"
