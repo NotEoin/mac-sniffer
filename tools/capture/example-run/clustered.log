@@ -1,0 +1,37 @@
+probe-sniffer started on mon0 via scapy (window=300s, interval=30s, fingerprint-clustering).
+Press Ctrl-C to stop.
+
+[17:46:27] devices in vicinity (last 300s): 9  (universal=5, randomized=4, macs-seen=12)  [unique-ever=9]  at least 10: addresses overlap inside a device
+[17:46:57] devices in vicinity (last 300s): 13  (universal=6, randomized=7, macs-seen=25)  [unique-ever=13]  at least 17: addresses overlap inside a device
+[17:47:27] devices in vicinity (last 300s): 20  (universal=9, randomized=11, macs-seen=34)  [unique-ever=20]  at least 24: addresses overlap inside a device
+[17:47:58] devices in vicinity (last 300s): 24  (universal=10, randomized=14, macs-seen=48)  [unique-ever=24]  at least 28: addresses overlap inside a device
+[17:48:28] devices in vicinity (last 300s): 26  (universal=11, randomized=15, macs-seen=54)  [unique-ever=26]  at least 30: addresses overlap inside a device
+[17:48:58] devices in vicinity (last 300s): 28  (universal=11, randomized=17, macs-seen=64)  [unique-ever=28]  at least 32: addresses overlap inside a device
+[17:49:28] devices in vicinity (last 300s): 29  (universal=11, randomized=18, macs-seen=69)  [unique-ever=29]  at least 34: addresses overlap inside a device
+[17:49:58] devices in vicinity (last 300s): 31  (universal=13, randomized=18, macs-seen=75)  [unique-ever=31]  at least 36: addresses overlap inside a device
+[17:50:28] devices in vicinity (last 300s): 31  (universal=13, randomized=18, macs-seen=83)  [unique-ever=31]  at least 37: addresses overlap inside a device
+[17:50:59] devices in vicinity (last 300s): 32  (universal=14, randomized=18, macs-seen=89)  [unique-ever=32]  at least 38: addresses overlap inside a device
+[17:51:29] devices in vicinity (last 300s): 31  (universal=14, randomized=17, macs-seen=90)  [unique-ever=32]  at least 37: addresses overlap inside a device
+[17:51:59] devices in vicinity (last 300s): 30  (universal=13, randomized=17, macs-seen=91)  [unique-ever=32]  at least 37: addresses overlap inside a device
+[17:52:29] devices in vicinity (last 300s): 32  (universal=15, randomized=17, macs-seen=104)  [unique-ever=35]  at least 39: addresses overlap inside a device
+[17:52:59] devices in vicinity (last 300s): 31  (universal=16, randomized=15, macs-seen=100)  [unique-ever=36]  at least 38: addresses overlap inside a device
+[17:53:29] devices in vicinity (last 300s): 30  (universal=14, randomized=16, macs-seen=101)  [unique-ever=37]  at least 37: addresses overlap inside a device
+[17:53:59] devices in vicinity (last 300s): 31  (universal=15, randomized=16, macs-seen=102)  [unique-ever=41]  at least 38: addresses overlap inside a device
+[17:54:30] devices in vicinity (last 300s): 31  (universal=15, randomized=16, macs-seen=109)  [unique-ever=41]  at least 37: addresses overlap inside a device
+[17:55:00] devices in vicinity (last 300s): 30  (universal=14, randomized=16, macs-seen=104)  [unique-ever=41]  at least 36: addresses overlap inside a device
+[17:55:30] devices in vicinity (last 300s): 29  (universal=14, randomized=15, macs-seen=102)  [unique-ever=41]  at least 30: addresses overlap inside a device
+[17:56:00] devices in vicinity (last 300s): 29  (universal=13, randomized=16, macs-seen=102)  [unique-ever=42]  at least 32: addresses overlap inside a device
+[17:56:30] devices in vicinity (last 300s): 29  (universal=13, randomized=16, macs-seen=91)  [unique-ever=42]  at least 32: addresses overlap inside a device
+[17:57:00] devices in vicinity (last 300s): 29  (universal=13, randomized=16, macs-seen=92)  [unique-ever=42]  at least 31: addresses overlap inside a device
+[17:57:30] devices in vicinity (last 300s): 26  (universal=12, randomized=14, macs-seen=87)  [unique-ever=42]  at least 28: addresses overlap inside a device
+[17:58:01] devices in vicinity (last 300s): 29  (universal=13, randomized=16, macs-seen=90)  [unique-ever=43]  at least 31: addresses overlap inside a device
+[17:58:31] devices in vicinity (last 300s): 30  (universal=13, randomized=17, macs-seen=88)  [unique-ever=44]  at least 32: addresses overlap inside a device
+[17:59:01] devices in vicinity (last 300s): 27  (universal=13, randomized=14, macs-seen=84)  [unique-ever=45]  at least 29: addresses overlap inside a device
+[17:59:31] devices in vicinity (last 300s): 32  (universal=15, randomized=17, macs-seen=89)  [unique-ever=49]  at least 35: addresses overlap inside a device
+[18:00:01] devices in vicinity (last 300s): 32  (universal=15, randomized=17, macs-seen=92)  [unique-ever=50]  at least 35: addresses overlap inside a device
+[18:00:31] devices in vicinity (last 300s): 32  (universal=15, randomized=17, macs-seen=89)  [unique-ever=50]  at least 35: addresses overlap inside a device
+[18:01:02] devices in vicinity (last 300s): 35  (universal=16, randomized=19, macs-seen=94)  [unique-ever=50]  at least 37: addresses overlap inside a device
+WARNING: Socket <scapy.arch.linux.L2ListenSocket object at 0x702165005a90> failed with '[Errno 100] Network is down'. It was closed.
+capture ended unexpectedly (is the interface still up and in monitor mode?)
+
+shutting down...

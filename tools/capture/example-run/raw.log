@@ -1,0 +1,37 @@
+probe-sniffer started on mon0 via scapy (window=300s, interval=30s, per-MAC).
+Press Ctrl-C to stop.
+
+[17:46:27] unique MACs in vicinity (last 300s): 12  (universal=5, randomized=7, macs-seen=12)  [unique-ever=12]
+[17:46:57] unique MACs in vicinity (last 300s): 25  (universal=6, randomized=19, macs-seen=25)  [unique-ever=25]
+[17:47:27] unique MACs in vicinity (last 300s): 34  (universal=9, randomized=25, macs-seen=34)  [unique-ever=34]
+[17:47:58] unique MACs in vicinity (last 300s): 48  (universal=10, randomized=38, macs-seen=48)  [unique-ever=48]
+[17:48:28] unique MACs in vicinity (last 300s): 54  (universal=11, randomized=43, macs-seen=54)  [unique-ever=54]
+[17:48:58] unique MACs in vicinity (last 300s): 64  (universal=11, randomized=53, macs-seen=64)  [unique-ever=64]
+[17:49:28] unique MACs in vicinity (last 300s): 69  (universal=11, randomized=58, macs-seen=69)  [unique-ever=69]
+[17:49:58] unique MACs in vicinity (last 300s): 75  (universal=13, randomized=62, macs-seen=75)  [unique-ever=75]
+[17:50:28] unique MACs in vicinity (last 300s): 83  (universal=13, randomized=70, macs-seen=83)  [unique-ever=83]
+[17:50:58] unique MACs in vicinity (last 300s): 90  (universal=14, randomized=76, macs-seen=90)  [unique-ever=90]
+[17:51:29] unique MACs in vicinity (last 300s): 91  (universal=14, randomized=77, macs-seen=91)  [unique-ever=97]
+[17:51:59] unique MACs in vicinity (last 300s): 91  (universal=13, randomized=78, macs-seen=91)  [unique-ever=109]
+[17:52:29] unique MACs in vicinity (last 300s): 104  (universal=15, randomized=89, macs-seen=104)  [unique-ever=127]
+[17:52:59] unique MACs in vicinity (last 300s): 100  (universal=16, randomized=84, macs-seen=100)  [unique-ever=135]
+[17:53:29] unique MACs in vicinity (last 300s): 101  (universal=14, randomized=87, macs-seen=101)  [unique-ever=142]
+[17:53:59] unique MACs in vicinity (last 300s): 101  (universal=15, randomized=86, macs-seen=101)  [unique-ever=154]
+[17:54:29] unique MACs in vicinity (last 300s): 109  (universal=15, randomized=94, macs-seen=109)  [unique-ever=166]
+[17:55:00] unique MACs in vicinity (last 300s): 104  (universal=14, randomized=90, macs-seen=104)  [unique-ever=167]
+[17:55:30] unique MACs in vicinity (last 300s): 102  (universal=14, randomized=88, macs-seen=102)  [unique-ever=175]
+[17:56:00] unique MACs in vicinity (last 300s): 102  (universal=13, randomized=89, macs-seen=102)  [unique-ever=180]
+[17:56:30] unique MACs in vicinity (last 300s): 92  (universal=13, randomized=79, macs-seen=92)  [unique-ever=182]
+[17:57:00] unique MACs in vicinity (last 300s): 92  (universal=13, randomized=79, macs-seen=92)  [unique-ever=192]
+[17:57:30] unique MACs in vicinity (last 300s): 87  (universal=12, randomized=75, macs-seen=87)  [unique-ever=204]
+[17:58:00] unique MACs in vicinity (last 300s): 90  (universal=13, randomized=77, macs-seen=90)  [unique-ever=213]
+[17:58:30] unique MACs in vicinity (last 300s): 88  (universal=13, randomized=75, macs-seen=88)  [unique-ever=217]
+[17:59:01] unique MACs in vicinity (last 300s): 84  (universal=13, randomized=71, macs-seen=84)  [unique-ever=225]
+[17:59:31] unique MACs in vicinity (last 300s): 89  (universal=15, randomized=74, macs-seen=89)  [unique-ever=239]
+[18:00:01] unique MACs in vicinity (last 300s): 94  (universal=15, randomized=79, macs-seen=94)  [unique-ever=245]
+[18:00:31] unique MACs in vicinity (last 300s): 89  (universal=15, randomized=74, macs-seen=89)  [unique-ever=248]
+[18:01:01] unique MACs in vicinity (last 300s): 94  (universal=16, randomized=78, macs-seen=94)  [unique-ever=257]
+WARNING: Socket <scapy.arch.linux.L2ListenSocket object at 0x767f0e665a90> failed with '[Errno 100] Network is down'. It was closed.
+capture ended unexpectedly (is the interface still up and in monitor mode?)
+
+shutting down...
