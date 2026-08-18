@@ -13,3 +13,8 @@ dist/
 .venv/
 venv/
 myenv/
+
+# capture runs: logs and figures from tools/capture/live-capture.sh.
+# tools/capture/example-run/ is deliberately NOT ignored - it holds the counts
+# behind the README figure, and carries no addresses. See its README.
+tools/capture/runs/
