@@ -364,13 +364,22 @@ run_capture() {
 
     # Two sniffers over one interface: the figure is the comparison between
     # them, and running them on separate captures would compare different air.
-    ( cd "$REPO" && PYTHONPATH="$REPO" "$PY" -m probe_sniffer --iface "$MON" \
-        --backend scapy --interval "$INTERVAL" --window "$WINDOW" \
+    #
+    # exec, so that $! is the sniffer itself rather than the subshell wrapping
+    # it. Without it the SIGINT below reaches only the wrapper: the wrapper
+    # dies, `kill -0` and `wait` both report the job finished, and the sniffer
+    # carries on orphaned into the next run, writing to a log that is supposed
+    # to be closed. That is how the hopping run of 20260818-173026 ended up
+    # with thirty minutes of reports in a fifteen-minute file.
+    ( cd "$REPO" && exec env PYTHONPATH="$REPO" "$PY" -m probe_sniffer \
+        --iface "$MON" --backend scapy --interval "$INTERVAL" \
+        --window "$WINDOW" \
         > "$dir/clustered.log" 2>&1 ) &
     CLUSTERED_PID=$!
-    ( cd "$REPO" && PYTHONPATH="$REPO" "$PY" -m probe_sniffer --iface "$MON" \
-        --backend scapy --interval "$INTERVAL" --window "$WINDOW" \
-        --no-fingerprint > "$dir/raw.log" 2>&1 ) &
+    ( cd "$REPO" && exec env PYTHONPATH="$REPO" "$PY" -m probe_sniffer \
+        --iface "$MON" --backend scapy --interval "$INTERVAL" \
+        --window "$WINDOW" --no-fingerprint \
+        > "$dir/raw.log" 2>&1 ) &
     RAW_PID=$!
 
     sleep 3
