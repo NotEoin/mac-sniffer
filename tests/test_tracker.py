@@ -249,6 +249,22 @@ def test_joining_keeps_the_earliest_first_seen(clock):
     assert record.last_seen == clock.now
 
 
+def test_joining_takes_the_signal_strength_from_the_newer_side(clock):
+    """The surviving cluster is the one seen first, which is not the one whose
+    signal strength is current. The reading has to come from whichever side was
+    heard most recently, or a merge pins the cluster to a stale figure."""
+    tracker = make_tracker(clock)
+    tracker.observe("aa:11:11:11:11:01", rssi=-30, fingerprint=FP_24GHZ)
+
+    clock.advance(30)
+    tracker.observe("ba:22:22:22:22:02", rssi=-90, fingerprint=FP_5GHZ)
+    clock.advance(10)
+    tracker.observe("ba:22:22:22:22:02", fingerprint=FP_24GHZ)
+
+    (record,) = tracker.snapshot()
+    assert record.last_rssi == -90
+
+
 def test_unrelated_devices_are_not_joined(clock):
     tracker = make_tracker(clock)
     tracker.observe("aa:11:11:11:11:01", fingerprint=FP_24GHZ)

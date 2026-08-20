@@ -159,6 +159,9 @@ class DeviceTracker:
 
         survivor, absorbed = (left, right) if left.first_seen <= right.first_seen \
             else (right, left)
+        # Which side was heard more recently, settled before last_seen below is
+        # advanced to cover both of them and the comparison stops being one.
+        absorbed_is_newer = absorbed.last_seen > survivor.last_seen
         survivor.first_seen = min(left.first_seen, right.first_seen)
         survivor.last_seen = max(left.last_seen, right.last_seen)
         survivor.hits += absorbed.hits
@@ -171,9 +174,11 @@ class DeviceTracker:
         survivor.randomized = survivor.randomized or absorbed.randomized
         if survivor.last_ssid is None:
             survivor.last_ssid = absorbed.last_ssid
-        if absorbed.last_seen > survivor.last_seen or survivor.last_rssi is None:
-            survivor.last_rssi = absorbed.last_rssi if absorbed.last_rssi is not None \
-                else survivor.last_rssi
+        # Signal strength describes the most recent frame, so the newer side
+        # wins it.
+        if (absorbed_is_newer or survivor.last_rssi is None) \
+                and absorbed.last_rssi is not None:
+            survivor.last_rssi = absorbed.last_rssi
 
         del self._devices[absorbed.key]
         self._merged_into[absorbed.key] = survivor.key
