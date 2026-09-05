@@ -79,13 +79,17 @@ def read(path: Path) -> dict:
     for line in path.read_text(errors="replace").splitlines():
         m = TICK.match(line)
         if m:
-            clock, window, count, _uni, _rand, seen, ever, floor = m.groups()
+            clock, window, count, uni, rand, seen, ever, floor = m.groups()
             ticks.append({
                 "at": datetime.strptime(clock, "%H:%M:%S"),
+                "clock": clock,
                 "window": int(window),
                 "count": int(count),
+                "universal": int(uni),
+                "randomized": int(rand),
                 "seen": int(seen),
                 "ever": int(ever),
+                "floor": int(floor) if floor else None,
             })
             if floor:
                 meta["floor"] = max(meta["floor"], int(floor))
