@@ -12,9 +12,12 @@ broadcast — and get a useful number back even though modern phones randomise t
 specifically to prevent this.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./media/live-capture-dark.png">
-  <img alt="Over fifteen minutes distinct addresses climb past 250 while the clustered device count holds around 30" src="./media/live-capture.png">
+  <source media="(prefers-color-scheme: dark)" srcset="./media/live-capture-dark.gif">
+  <img alt="Over fifteen minutes distinct addresses climb past 250 while the clustered device count holds around 30" src="./media/live-capture.gif">
 </picture>
+
+*One frame per report, played back from the capture logs. The line under the chart is what the
+sniffer printed at that moment. A still of the finished run is in [`media/live-capture.png`](./media/live-capture.png).*
 
 **MAC addresses are personal data.** Read [Legal and ethical use](#️-legal-and-ethical-use) before
 you run this on anything but your own premises.
@@ -195,6 +198,7 @@ sniffer and is not needed to run one.
 | | |
 |---|---|
 | `tools/plot_capture.py` | Draws the figure from two capture logs. Needs `pip install -e ".[plot]"` |
+| `tools/animate_capture.py` | Plays the same logs back a report at a time. `gif`, or `mp4`/`webm` with ffmpeg |
 | `tools/capture/live-capture.sh` | Records both logs end to end and puts the network back afterwards |
 | `tools/capture/example-run/` | The counts behind the figure above, so it can be redrawn without a card |
 

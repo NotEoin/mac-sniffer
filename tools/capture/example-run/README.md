@@ -1,7 +1,6 @@
 # The capture behind the README figure
 
-The run `media/live-capture.png` is drawn from, kept so the figure can be redrawn without a wireless
-card:
+The run the README figure is drawn from, kept so it can be redrawn without a wireless card:
 
 ```bash
 python tools/plot_capture.py \
@@ -9,6 +8,17 @@ python tools/plot_capture.py \
     tools/capture/example-run/raw.log \
     --plan "pinned to 2437 MHz" --out media/live-capture.png
 ```
+
+The animation on the front page comes from the same two logs, a frame per report:
+
+```bash
+python tools/animate_capture.py \
+    tools/capture/example-run/clustered.log \
+    tools/capture/example-run/raw.log \
+    --plan "pinned to 2437 MHz" --out media/live-capture.gif
+```
+
+Both take `--theme dark` for the dark variant.
 
 Both logs cover the same fifteen minutes of the same room, captured at once by two sniffers sharing
 one monitor interface — `clustered.log` counting devices, `raw.log` started with `--no-fingerprint`
